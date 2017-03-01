@@ -128,7 +128,8 @@ class MemoryActionStorage(ActionStorage):
         action: Action object
             The Action object that has id action_id.
         """
-        return deepcopy(self._actions[action_id])
+        #return deepcopy(self._actions[action_id])
+        return self._actions[action_id]
 
     def add(self, actions):
         r"""Add actions
