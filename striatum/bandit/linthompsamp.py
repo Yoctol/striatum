@@ -141,7 +141,7 @@ class LinThompSamp(BaseBandit):
                                             'U': U, 'D': D})
 
         x = np.random.normal(0.0, 1.0, size=len(D))
-        mu_tilde = (cm.CUDAMatrix(np.diag(v * np.sqrt(1.0 / D))).dot(cm.CUDAMatrix(U.T)).asarray().T.dot(x)
+        mu_tilde = (cm.CUDAMatrix(np.diag(v * np.sqrt(D))).dot(cm.CUDAMatrix(U.T)).asarray().T.dot(x)
                     + mu_hat.flat)[..., np.newaxis]
 
         # estimated_reward_array = gpuarray.dot(
