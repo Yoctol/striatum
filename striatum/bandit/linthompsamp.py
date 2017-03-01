@@ -118,7 +118,7 @@ class LinThompSamp(BaseBandit):
                              * self.context_dimension
                              * np.log(1 / self.delta))
         x = np.random.normal(0.0, 1.0, size=len(D))
-        mu_tilde = (np.diag(v * np.sqrt(1.0 / D)).dot(U.T).T.dot(x.T)
+        mu_tilde = U.dot(np.diag(v * np.sqrt(1.0 / D)).dot(x)
                     + mu_hat.flat)[..., np.newaxis]
 
         estimated_reward_array = context_array.dot(mu_hat)
