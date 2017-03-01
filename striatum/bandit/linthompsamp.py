@@ -136,8 +136,9 @@ class LinThompSamp(BaseBandit):
                 U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
             else:
                 U, D, V = np.linalg.svd(invB, full_matrices=False)
-            model['U'] = U
-            model['D'] = D
+            f = model['f']
+            self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat, 'f': f,
+                                            'U': U, 'D': D})
 
         x = np.random.normal(0.0, 1.0, size=len(D))
         mu_tilde = (cm.CUDAMatrix(np.diag(v * np.sqrt(1.0 / D))).dot(cm.CUDAMatrix(U.T)).asarray().T.dot(x)
@@ -169,6 +170,10 @@ class LinThompSamp(BaseBandit):
             score_dict[action_id] = float(score)
             uncertainty_dict[action_id] = float(score - estimated_reward)
         return estimated_reward_dict, uncertainty_dict, score_dict
+
+    def add_history(self, context):
+        history_id = self._history_storage.add_history(context, [])
+        return history_id
 
     def get_action(self, context, n_actions=None):
         """Return the action to perform
