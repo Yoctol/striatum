@@ -18,6 +18,7 @@ else:
         'numpy',
         'scipy',
         'matplotlib',
+        'pycuda',
     ]
 
 long_description = ("See `github <https://github.com/ntucllab/striatum>`_ "
