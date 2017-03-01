@@ -12,6 +12,11 @@ from six.moves import zip
 import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spslg
+import cudamat as cm
+cm.cublas_init()
+
+import pycuda.gpuarray as gpuarray
+import pycuda.autoinit
 
 from .bandit import BaseBandit
 from ..utils import get_random_state
@@ -118,11 +123,25 @@ class LinThompSamp(BaseBandit):
                              * self.context_dimension
                              * np.log(1 / self.delta))
         x = np.random.normal(0.0, 1.0, size=len(D))
-        mu_tilde = (np.diag(v * np.sqrt(1.0 / D)).dot(U.T).T.dot(x)
+        mu_tilde = (cm.CUDAMatrix(np.diag(v * np.sqrt(1.0 / D))).dot(cm.CUDAMatrix(U.T)).asarray().T.dot(x)
                     + mu_hat.flat)[..., np.newaxis]
 
-        estimated_reward_array = context_array.dot(mu_hat)
-        score_array = context_array.dot(mu_tilde)
+        # estimated_reward_array = gpuarray.dot(
+        #     gpuarray.to_gpu(context_array.astype(np.float32)),
+        #     gpuarray.to_gpu(mu_hat.astype(np.float32)),
+        # ).get()
+        # score_array = gpuarray.dot(
+        #     gpuarray.to_gpu(context_array.astype(np.float32)),
+        #     gpuarray.to_gpu(mu_tilde.astype(np.float32)),
+        # ).get()
+        estimated_reward_array = cm.dot(
+            cm.CUDAMatrix(context_array),
+            cm.CUDAMatrix(mu_hat)
+        ).asarray()
+        score_array = cm.dot(
+            cm.CUDAMatrix(context_array),
+            cm.CUDAMatrix(mu_tilde)
+        ).asarray()
 
         estimated_reward_dict = {}
         uncertainty_dict = {}
@@ -213,15 +232,23 @@ class LinThompSamp(BaseBandit):
         # this for loop can be parallelized
         for action_id, reward in six.viewitems(rewards):
             context_t = np.reshape(context[action_id], (-1, 1))
-            B += context_t.dot(context_t.T)  # pylint: disable=invalid-name
+            B += cm.dot(
+                cm.CUDAMatrix(context_t),
+                cm.CUDAMatrix(context_t.T)
+            ).asarray()
+            # B += context_t.dot(context_t.T)  # pylint: disable=invalid-name
             f += reward * context_t
         if self.use_sparse_svd:
             B_sps = sps.csr_matrix(B)
             U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
         else:
             U, D, V = np.linalg.svd(B, full_matrices=False)
-        mu_hat = U.dot(np.diag(1.0 / D).dot(V))
-        mu_hat = mu_hat.dot(f)
+        # mu_hat = U.dot(np.diag(1.0 / D).dot(V))
+        # mu_hat = mu_hat.dot(f)
+        mu_hat = cm.CUDAMatrix(U).dot(
+                    cm.CUDAMatrix(np.diag(1.0 / D)).dot(
+                    cm.CUDAMatrix(V))
+                 ).dot(cm.CUDAMatrix(f)).asarray()
         self._model_storage.save_model({'B': B, 'U': U, 'D': D,
                                         'mu_hat': mu_hat, 'f': f})
 
