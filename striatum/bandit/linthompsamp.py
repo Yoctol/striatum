@@ -250,19 +250,19 @@ class LinThompSamp(BaseBandit):
 
         # Update the model
         model = self._model_storage.get_model()
-        invB = model['invB']  # pylint: disable=invalid-name
-        f = model['f']        # pylint: disable=invalid-name
+        invB = cm.CUDAMatrix(model['invB'])  # pylint: disable=invalid-name
+        f = cm.CUDAMatrix(model['f'])        # pylint: disable=invalid-name
         for action_id, reward in six.viewitems(rewards):
-            context_t = np.reshape(context[action_id], (-1, 1))
-            invB_context_t = invB.dot(context_t)   # pylint: disable=C0103
-            invertible_checkpoint = 1 + (context_t.T).dot(invB_context_t)[0][0]
+            context_t = cm.CUDAMatrix(np.reshape(context[action_id], (-1, 1)))
+            invB_context_t = cm.dot(invB, context_t)   # pylint: disable=C0103
+            invertible_checkpoint = 1 + cm.dot(context_t.T, invB_context_t).asarray()[0][0]
             if abs(invertible_checkpoint) < 1e-5:
                 invertible_checkpoint = \
                     np.sign(invertible_checkpoint) * (abs(invertible_checkpoint) + 1e+5)
-            invB += -(invB_context_t.dot(invB_context_t.T)) / invertible_checkpoint
-            f += reward * context_t
-        mu_hat = invB.dot(f)
-        self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat, 'f': f,
+            invB.add(cm.dot(invB_context_t, invB_context_t.T).mult( -1.0 / invertible_checkpoint))
+            f.add(context_t.mult(reward))
+        mu_hat = cm.dot(invB, f)
+        self._model_storage.save_model({'invB': invB.asarray(), 'mu_hat': mu_hat.asarray(), 'f': f.asarray(),
                                         'U': None, 'D': None})
         # Update the history
         self._history_storage.add_reward(history_id, rewards)
