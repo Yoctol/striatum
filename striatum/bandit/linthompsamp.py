@@ -211,7 +211,8 @@ class LinThompSamp(BaseBandit):
         if n_actions is None:
             recommendation_id = max(score, key=score.get)
             recommendations = self._recommendation_cls(
-                action=self._action_storage.get(recommendation_id),
+                action=self._action_storage.get(recommendation_id,
+                                                return_copy=False),
                 estimated_reward=estimated_reward[recommendation_id],
                 uncertainty=uncertainty[recommendation_id],
                 score=score[recommendation_id],
@@ -222,7 +223,8 @@ class LinThompSamp(BaseBandit):
             recommendations = []  # pylint: disable=redefined-variable-type
             for action_id in recommendation_ids:
                 recommendations.append(self._recommendation_cls(
-                    action=self._action_storage.get(action_id),
+                    action=self._action_storage.get(action_id,
+                                                    return_copy=False),
                     estimated_reward=estimated_reward[action_id],
                     uncertainty=uncertainty[action_id],
                     score=score[action_id],
