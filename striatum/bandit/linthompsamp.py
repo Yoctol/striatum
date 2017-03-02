@@ -15,6 +15,7 @@ from six.moves import zip
 import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spslg
+import cudamat as cm
 
 from .bandit import BaseBandit
 from ..utils import get_random_state
@@ -107,7 +108,6 @@ class LinThompSamp(BaseBandit):
         self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat,
                                         'f': f, 'U': None, 'D': None})
         if self.use_gpu:
-            import cudamat as cm
 
             cm.cublas_init()
 
@@ -142,9 +142,46 @@ class LinThompSamp(BaseBandit):
         #mu_tilde = self.random_state.multivariate_normal(
         #    mu_hat.flat, v**2 * invB)[..., np.newaxis]
         if U is None or D is None:
-            if self.use_sparse_svd:
-                B_sps = sps.csr_matrix(invB)
-                U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
+            if self.use_gpu:
+                #B_sps = sps.csr_matrix(invB)
+                #U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
+                q1 = np.zeros((self.context_dimension, 1))
+                q1[0][0] = 1.0
+                beta = 1.0
+
+                k = 0
+                cm_U = cm.empty((self.context_dimension, self.sparse_svd_k))
+                cm_invB = cm.CUDAMatrix(invB)
+                r = cm.CUDAMatrix(q1)
+
+                qk = cm.empty((self.context_dimension, 1))
+                qkm1 = cm.empty((self.context_dimension, 1))
+                Aqk = cm.empty((self.context_dimension, 1))
+
+                cm_alpha = cm.CUDAMatrix(np.zeros((1, self.sparse_svd_k)))
+                cm_beta = cm.empty((1, 1))
+
+                while beta > 1e-5 and k < self.sparse_svd_k:
+                    qkm1.assign(qk)
+                    r.divide(beta, qk)
+                    cm_U.get_col_slice(k, k + 1).assign(qk)
+                    cm.dot(cm_invB, qk, Aqk)
+                    cm.dot(qk.T, Aqk, cm_alpha.get_col_slice(k, k + 1))
+                    alpha = float(cm_alpha.get_col_slice(k, k + 1).asarray()[0][0])
+                    Aqk.subtract(qk.mult(alpha), r)
+                    r.subtract(qkm1.mult(beta))
+                    cm.dot(r.T, r, cm_beta)
+                    beta = float(cm.sqrt(cm_beta).asarray()[0][0])
+                    k += 1
+
+                U = cm_U.asarray()
+                d = cm_alpha.asarray()
+                d_list = []
+                for value in d[0, :]:
+                    if value > 1e-5:
+                        d_list.append(value)
+                D = np.array(d_list)
+
             else:
                 U, D, V = np.linalg.svd(invB, full_matrices=False)
             model['U'] = U

@@ -26,7 +26,7 @@ def main():
                             context_dimension=context_dimension,
                             delta=0.1, R=0.01, epsilon=0.5,
                             random_state=random_state,
-                            use_sparse_svd=True)
+                            use_gpu=True)
     context1, desired_actions1 = simulation.simulate_data(
         n_rounds, context_dimension, action_storage, random_state=0, sparse=True)
     profiler = Profile()
