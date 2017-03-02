@@ -18,7 +18,7 @@ else:
         'numpy',
         'scipy',
         'matplotlib',
-        'cudamat',
+        'git+https://github.com/cudamat/cudamat.git',
     ]
 
 long_description = ("See `github <https://github.com/ntucllab/striatum>`_ "

@@ -15,7 +15,6 @@ from six.moves import zip
 import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spslg
-import cudamat as cm
 
 from .bandit import BaseBandit
 from ..utils import get_random_state
@@ -108,6 +107,8 @@ class LinThompSamp(BaseBandit):
         self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat,
                                         'f': f, 'U': None, 'D': None})
         if self.use_gpu:
+            import cudamat as cm
+
             cm.cublas_init()
 
     def __del__(self):
