@@ -7,4 +7,4 @@ matplotlib
 pylint
 tox
 
-pycuda
+cudamat
