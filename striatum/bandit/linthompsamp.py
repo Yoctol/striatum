@@ -122,7 +122,6 @@ class LinThompSamp(BaseBandit):
         context_array = cm.CUDAMatrix(
             np.asarray([context[action_id] for action_id in action_ids])
         )
-
         # context_array = np.asarray(list(six.viewvalues(context)))
 
         model = self._model_storage.get_model()
@@ -146,9 +145,6 @@ class LinThompSamp(BaseBandit):
             model['D'] = D
 
         x = np.random.normal(0.0, 1.0, size=len(D))
-
-        #mu_tilde = (np.diag(v * np.sqrt(D)).dot(U.T).T.dot(x)
-        #            + mu_hat.flat)[..., np.newaxis]
         cm_U = cm.CUDAMatrix(U)
         cm_x = cm.CUDAMatrix((v * np.sqrt(D) * x).reshape((len(D), 1)))
         mu_tilde = cm_U.dot(cm_x).add(mu_hat)
