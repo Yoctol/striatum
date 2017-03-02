@@ -11,12 +11,12 @@ exploitation. Please check the reference for more details.
 import logging
 import six
 from six.moves import zip
+import pdb
 
 import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spslg
 import cudamat as cm
-cm.cublas_init()
 
 import pycuda.gpuarray as gpuarray
 import pycuda.autoinit
@@ -111,17 +111,23 @@ class LinThompSamp(BaseBandit):
         self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat,
                                         'f': f, 'U': None, 'D': None})
 
+        cm.cublas_init()
+
+    def __del__(self):
+        cm.shutdown()
+
     def _linthompsamp_score(self, context):
         """Thompson Sampling"""
         action_ids = list(six.viewkeys(context))
-        context_array = np.asarray([context[action_id]
-                                    for action_id in action_ids])
+        context_array = cm.CUDAMatrix(
+            np.asarray([context[action_id] for action_id in action_ids])
+        )
 
         # context_array = np.asarray(list(six.viewvalues(context)))
 
         model = self._model_storage.get_model()
         invB = model['invB']  # pylint: disable=invalid-name
-        mu_hat = model['mu_hat']
+        mu_hat = cm.CUDAMatrix(model['mu_hat'])
         U = model['U']
         D = model['D']
         v = self.R * np.sqrt(24 / self.epsilon
@@ -136,30 +142,19 @@ class LinThompSamp(BaseBandit):
                 U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
             else:
                 U, D, V = np.linalg.svd(invB, full_matrices=False)
-            f = model['f']
-            self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat, 'f': f,
-                                            'U': U, 'D': D})
+            model['U'] = U
+            model['D'] = D
 
         x = np.random.normal(0.0, 1.0, size=len(D))
-        mu_tilde = (cm.CUDAMatrix(np.diag(v * np.sqrt(D))).dot(cm.CUDAMatrix(U.T)).asarray().T.dot(x)
-                    + mu_hat.flat)[..., np.newaxis]
 
-        # estimated_reward_array = gpuarray.dot(
-        #     gpuarray.to_gpu(context_array.astype(np.float32)),
-        #     gpuarray.to_gpu(mu_hat.astype(np.float32)),
-        # ).get()
-        # score_array = gpuarray.dot(
-        #     gpuarray.to_gpu(context_array.astype(np.float32)),
-        #     gpuarray.to_gpu(mu_tilde.astype(np.float32)),
-        # ).get()
-        estimated_reward_array = cm.dot(
-            cm.CUDAMatrix(context_array),
-            cm.CUDAMatrix(mu_hat)
-        ).asarray()
-        score_array = cm.dot(
-            cm.CUDAMatrix(context_array),
-            cm.CUDAMatrix(mu_tilde)
-        ).asarray()
+        #mu_tilde = (np.diag(v * np.sqrt(D)).dot(U.T).T.dot(x)
+        #            + mu_hat.flat)[..., np.newaxis]
+        cm_U = cm.CUDAMatrix(U)
+        cm_x = cm.CUDAMatrix((v * np.sqrt(D) * x).reshape((len(D), 1)))
+        mu_tilde = cm_U.dot(cm_x).add(mu_hat)
+
+        estimated_reward_array = context_array.dot(mu_hat).asarray()
+        score_array = context_array.dot(mu_tilde).asarray()
 
         estimated_reward_dict = {}
         uncertainty_dict = {}
@@ -247,23 +242,49 @@ class LinThompSamp(BaseBandit):
         context = (self._history_storage
                    .get_unrewarded_history(history_id)
                    .context)
-
         # Update the model
         model = self._model_storage.get_model()
-        invB = cm.CUDAMatrix(model['invB'])  # pylint: disable=invalid-name
-        f = cm.CUDAMatrix(model['f'])        # pylint: disable=invalid-name
+        invB = cm.CUDAMatrix(model['invB'])
+        f = cm.CUDAMatrix(model['f'])
+        invB_context_t = cm.empty((self.context_dimension, 1))
+        sub_inv_array = cm.empty((
+            self.context_dimension, self.context_dimension
+        ))
+        checkpoint = cm.empty((1, 1))
+        context_t = cm.empty((self.context_dimension, 1))
+
         for action_id, reward in six.viewitems(rewards):
-            context_t = cm.CUDAMatrix(np.reshape(context[action_id], (-1, 1)))
-            invB_context_t = cm.dot(invB, context_t)   # pylint: disable=C0103
-            invertible_checkpoint = 1 + cm.dot(context_t.T, invB_context_t).asarray()[0][0]
+            context_t.assign(
+                cm.CUDAMatrix(np.reshape(context[action_id], (-1, 1)))
+            )
+            cm.dot(invB, context_t, invB_context_t)
+            cm.dot(
+                context_t.T, invB_context_t, checkpoint
+            )
+            checkpoint.copy_to_host()
+            invertible_checkpoint = 1.0 + checkpoint.numpy_array[0][0]
             if abs(invertible_checkpoint) < 1e-5:
                 invertible_checkpoint = \
-                    np.sign(invertible_checkpoint) * (abs(invertible_checkpoint) + 1e+5)
-            invB.add(cm.dot(invB_context_t, invB_context_t.T).mult( -1.0 / invertible_checkpoint))
-            f.add(context_t.mult(reward))
+                    np.sign(invertible_checkpoint) \
+                    * (abs(invertible_checkpoint) + 1e+5)
+            cm.dot(
+                invB_context_t,
+                invB_context_t.T,
+                sub_inv_array
+            )
+            sub_inv_array.mult(-1.0 / invertible_checkpoint)
+            invB.add(sub_inv_array)
+            f.add(
+                context_t.mult(int(reward))
+            )
         mu_hat = cm.dot(invB, f)
-        self._model_storage.save_model({'invB': invB.asarray(), 'mu_hat': mu_hat.asarray(), 'f': f.asarray(),
-                                        'U': None, 'D': None})
+        self._model_storage.save_model({
+            'invB': invB.asarray(),
+            'mu_hat': mu_hat.asarray(),
+            'f': f.asarray(),
+            'U': None,
+            'D': None
+        })
         # Update the history
         self._history_storage.add_reward(history_id, rewards)
 
