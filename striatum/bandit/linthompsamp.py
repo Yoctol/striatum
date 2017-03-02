@@ -68,14 +68,14 @@ class LinThompSamp(BaseBandit):
     def __init__(self, history_storage, model_storage, action_storage,
                  recommendation_cls=None, context_dimension=128, delta=0.5,
                  R=0.01, epsilon=0.5, random_state=None,
-                 use_sparse_svd=False, sparse_svd_k=6, gpu=False):
+                 use_sparse_svd=False, sparse_svd_k=6, use_gpu=False):
         super(LinThompSamp, self).__init__(history_storage, model_storage,
                                            action_storage, recommendation_cls)
         self.random_state = get_random_state(random_state)
         self.use_sparse_svd = use_sparse_svd
         self.sparse_svd_k = sparse_svd_k
         self.context_dimension = context_dimension
-        self.gpu = gpu
+        self.use_gpu = use_gpu
 
         # 0 < delta < 1
         if not isinstance(delta, float):
@@ -107,18 +107,18 @@ class LinThompSamp(BaseBandit):
         f = np.zeros(shape=(self.context_dimension, 1))
         self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat,
                                         'f': f, 'U': None, 'D': None})
-        if self.gpu:
+        if self.use_gpu:
             cm.cublas_init()
 
     def __del__(self):
-        if self.gpu:
+        if self.use_gpu:
             cm.shutdown()
 
     def _linthompsamp_score(self, context):
         """Thompson Sampling"""
         action_ids = list(six.viewkeys(context))
         model = self._model_storage.get_model()
-        if self.gpu:
+        if self.use_gpu:
             context_array = cm.CUDAMatrix(
                 np.asarray([context[action_id] for action_id in action_ids])
             )
@@ -151,7 +151,7 @@ class LinThompSamp(BaseBandit):
 
         x = np.random.normal(0.0, 1.0, size=len(D))
 
-        if self.gpu:
+        if self.use_gpu:
             cm_U = cm.CUDAMatrix(U)
             cm_x = cm.CUDAMatrix((v * np.sqrt(D) * x).reshape((len(D), 1)))
             mu_tilde = cm_U.dot(cm_x).add(mu_hat)
@@ -251,7 +251,7 @@ class LinThompSamp(BaseBandit):
                    .context)
         # Update the model
         model = self._model_storage.get_model()
-        if self.gpu:
+        if self.use_gpu:
             invB = cm.CUDAMatrix(model['invB'])
             f = cm.CUDAMatrix(model['f'])
             invB_context_t = cm.empty((self.context_dimension, 1))
