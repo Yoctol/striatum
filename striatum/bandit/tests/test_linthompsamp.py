@@ -59,7 +59,7 @@ class TestLinThompSamp(ChangeableActionSetBanditTest,
         context = {1: [1, 1], 2: [2, 2], 3: [3, 3]}
         history_id, _ = policy.get_action(context, 2)
         policy.reward(history_id, {2: 1, 3: 1})
-        self.assertTupleEqual(model['B'].shape, (self.context_dimension,
+        self.assertTupleEqual(model['invB'].shape, (self.context_dimension,
                                                  self.context_dimension))
         self.assertEqual(len(model['mu_hat']), self.context_dimension)
         self.assertEqual(len(model['f']), self.context_dimension)
