@@ -108,7 +108,6 @@ class LinThompSamp(BaseBandit):
         self._model_storage.save_model({'invB': invB, 'mu_hat': mu_hat,
                                         'f': f, 'U': None, 'D': None})
         if self.use_gpu:
-
             cm.cublas_init()
 
     def __del__(self):
@@ -143,8 +142,6 @@ class LinThompSamp(BaseBandit):
         #    mu_hat.flat, v**2 * invB)[..., np.newaxis]
         if U is None or D is None:
             if self.use_gpu:
-                #B_sps = sps.csr_matrix(invB)
-                #U, D, V = spslg.svds(B_sps, k=self.sparse_svd_k)
                 q1 = np.zeros((self.context_dimension, 1))
                 q1[0][0] = 1.0
                 beta = 1.0
