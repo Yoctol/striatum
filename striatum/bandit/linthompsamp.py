@@ -181,6 +181,7 @@ class LinThompSamp(BaseBandit):
                     if value > 1e-5:
                         d_list.append(value)
                 D = np.array(d_list)
+                U = U[:, :len(D)]
 
             else:
                 U, D, V = np.linalg.svd(invB, full_matrices=False)
