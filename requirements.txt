@@ -3,8 +3,6 @@ numpy
 scipy
 scikit-learn
 matplotlib
-
 pylint
 tox
-
-git+https://github.com/cudamat/cudamat.git
+git+https://github.com/cudamat/cudamat.git@master
